@@ -1,31 +1,25 @@
-      <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>R E P O : HAZARD RACER</title>
+    <title>Sonic 2D Momentum Prototype</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <h1>R E P O // HAZARD_RACER</h1>
-    
-    <!-- Dashboard HUD -->
-    <div id="dash">
-        <div>VELOCITY: <span id="uiSpeed" class="val">0.0</span> km/h</div>
-        <div>CARGO: <span id="uiCargo" class="val" style="color: #ff5500;">NONE</span></div>
-        <div>RADAR PROXIMITY: <span id="uiRadar" class="val" style="color: #00ffcc;">SAFE</span></div>
+    <div id="hud">
+        <div>SCORE: <span class="stat">000000</span></div>
+        <div>TIME: <span id="uiTime" class="stat">0:00</span></div>
+        <div>RINGS: <span id="uiRings" class="stat">00</span></div>
     </div>
 
-    <!-- Main Viewport -->
-    <canvas id="raceCanvas" width="1000" height="650"></canvas>
+    <canvas id="gameCanvas" width="800" height="480"></canvas>
 
-    <div class="info">
-        [W/S or UP/DOWN] Gas / Brake | [A/D or LEFT/RIGHT] Steer Rover Chassis<br>
-        Race down the corridors, seize the blinking salvage core, and escape back to the EXTR_BAY. Don't let the entity intercept you.
+    <div class="controls">
+        [A / D] or [Left / Right Arrows] Move Left/Right | [SPACE] Jump / Spin Dash
     </div>
 
-    <!-- Link to external game engine scripts -->
     <script src="game.js"></script>
 </body>
-</html> 
+</html>
