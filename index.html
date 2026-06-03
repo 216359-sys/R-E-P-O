@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>R E P O - 2D Salvage Prototype</title>
+    <title>R E P O - Advanced 2D Salvage</title>
     <style>
         body {
             margin: 0;
-            background-color: #050505;
+            background-color: #080808;
             color: #d4af37;
             font-family: 'Courier New', Courier, monospace;
             display: flex;
@@ -16,54 +16,74 @@
             height: 100vh;
             overflow: hidden;
         }
-        h1 { margin-bottom: 5px; letter-spacing: 5px; text-shadow: 0 0 10px #ff3300; }
-        #gameUi { font-size: 16px; margin-bottom: 10px; display: flex; gap: 30px; }
-        canvas { border: 3px solid #333; background: #000; box-shadow: 0 0 20px rgba(255,255,255,0.05); }
-        .controls { margin-top: 10px; color: #888; font-size: 12px; }
+        h1 { margin: 5px 0; letter-spacing: 6px; text-shadow: 0 0 10px #ff3300; font-size: 28px; }
+        #gameUi { font-size: 14px; margin-bottom: 10px; display: flex; gap: 40px; background: #111; padding: 10px 20px; border: 1px solid #333; }
+        canvas { border: 3px solid #444; background: #000; box-shadow: 0 0 25px rgba(255,0,0,0.1); }
+        .controls { margin-top: 10px; color: #888; font-size: 11px; text-align: center; line-height: 1.5; }
+        .bar { display: inline-block; width: 100px; height: 12px; background: #222; border: 1px solid #555; vertical-align: middle; position: relative; }
+        .fill { height: 100%; width: 100%; background: #00ffcc; transition: width 0.1s; }
     </style>
 </head>
 <body>
 
-    <h1>R E P O : 2D</h1>
+    <h1>R E P O : TERMINAL_</h1>
     <div id="gameUi">
-        <div>SCRAP COLLECTED: <span id="quota">0</span> / 3</div>
-        <div>STATUS: <span id="status" style="color: #00ff00;">STABLE</span></div>
+        <div>SCRAP: <span id="quota" style="color:#fff;">0</span> / 4</div>
+        <div>BATTERY: <div class="bar"><div id="batFill" class="fill"></div></div></div>
+        <div>THREAT LEVEL: <span id="status" style="color: #00ff00;">MINIMAL</span></div>
     </div>
     
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas" width="900" height="650"></canvas>
     
-    <div class="controls">WASD / Arrow Keys to Move | Mouse to Aim Flashlight | Return to Yellow Base to Extract</div>
+    <div class="controls">
+        [WASD / Arrows] Move | [SHIFT] Sprint (Makes Noise) | [Right-Click] Toggle Flashlight<br>
+        Collect cyan scrap items and return to the yellow zone. Avoid the entity in the dark.
+    </div>
 
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// Game Variables
-const player = { x: 70, y: 70, size: 12, speed: 3.5, scrap: 0 };
-const elevator = { x: 40, y: 40, size: 50 };
-const enemy = { x: 500, y: 450, size: 15, speed: 1.8, active: false };
-let mouseX = 0;
-let mouseY = 0;
+// Disable right click context menu inside the game
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// Game Configuration & State
+const player = { x: 75, y: 75, size: 10, speed: 2.2, scrap: 0, battery: 100, lightOn: true, noise: 0 };
+const elevator = { x: 30, y: 30, width: 90, height: 90 };
+const enemy = { x: 750, y: 550, size: 14, speed: 1.5, state: 'WANDER', targetX: 750, targetY: 550, timer: 0 };
+
+let mouseX = 0, mouseY = 0;
 let keys = {};
 let scrapList = [];
-let gameOver = false;
-let gameWon = false;
+let walls = [];
+let gameOver = false, gameWon = false;
 
-// Generate Random Scrap
-function spawnScrap() {
-    scrapList = [];
-    for(let i=0; i<3; i++) {
-        scrapList.push({
-            x: 150 + Math.random() * 550,
-            y: 150 + Math.random() * 350,
-            size: 8,
-            collected: false
-        });
+// Generate Static Map Obstacles (Industrial Walls)
+walls = [
+    {x: 200, y: 0, w: 40, h: 400},
+    {x: 200, y: 500, w: 40, h: 150},
+    {x: 350, y: 150, w: 300, h: 40},
+    {x: 450, y: 300, w: 40, h: 350},
+    {x: 650, y: 0, w: 40, h: 300},
+    {x: 700, y: 400, w: 200, h: 40}
+];
+
+// Spawn Random Scrap Locations
+function initScrap() {
+    while(scrapList.length < 4) {
+        let rx = 150 + Math.random() * 700;
+        let ry = 150 + Math.random() * 450;
+        // Ensure scrap doesn't spawn inside walls
+        let insideWall = walls.some(w => rx > w.x && rx < w.x+w.w && ry > w.y && ry < w.y+w.h);
+        if(!insideWall) {
+            scrapList.push({ x: rx, y: ry, size: 7, collected: false });
+        }
     }
 }
-spawnScrap();
+initScrap();
 
-// Input Listeners
+// Input Tracking
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 canvas.addEventListener("mousemove", e => {
@@ -71,55 +91,123 @@ canvas.addEventListener("mousemove", e => {
     mouseX = e.clientX - rect.left;
     mouseY = e.clientY - rect.top;
 });
+canvas.addEventListener("mousedown", e => {
+    if (e.button === 2) player.lightOn = !player.lightOn; // Right click toggle
+});
 
-// Distance helper
-function dist(x1, y1, x2, y2) {
-    return Math.sqrt((x2 - x1)**2 + (y2 - y1)**2);
+function dist(x1, y1, x2, y2) { return Math.sqrt((x2 - x1)**2 + (y2 - y1)**2); }
+
+// Basic AABB Collision Detection for Walls
+function checkWallCollision(x, y, size) {
+    for (let w of walls) {
+        if (x + size > w.x && x - size < w.x + w.w && y + size > w.y && y - size < w.y + w.h) {
+            return true;
+        }
+    }
+    return false;
 }
 
-// Check if an object is within the flashlight beam cone
-function inLightCone(targetX, targetY) {
+// Flashlight Cone Field-of-View Logic
+function inLightCone(tx, ty) {
+    if (!player.lightOn || player.battery <= 0) return false;
     const angleToMouse = Math.atan2(mouseY - player.y, mouseX - player.x);
-    const angleToTarget = Math.atan2(targetY - player.y, targetX - player.x);
+    const angleToTarget = Math.atan2(ty - player.y, tx - player.x);
     
     let diff = angleToTarget - angleToMouse;
     while (diff < -Math.PI) diff += Math.PI * 2;
     while (diff > Math.PI) diff -= Math.PI * 2;
     
-    const coneAngle = Math.PI / 4; // 45 degrees
-    const maxDistance = 300;
-    
-    return Math.abs(diff) < coneAngle && dist(player.x, player.y, targetX, targetY) < maxDistance;
+    return Math.abs(diff) < (Math.PI / 5) && dist(player.x, player.y, tx, ty) < 280;
 }
 
-// Main Game Loop
+// System Updates
 function update() {
     if (gameOver || gameWon) return;
 
-    // Player Movement
-    if (keys['w'] || keys['arrowup']) player.y -= player.speed;
-    if (keys['s'] || keys['arrowdown']) player.y += player.speed;
-    if (keys['a'] || keys['arrowleft']) player.x -= player.speed;
-    if (keys['d'] || keys['arrowright']) player.x += player.speed;
+    // Movement speeds (Sprint system)
+    let currentSpeed = player.speed;
+    let makingNoise = false;
+    if (keys['shift'] && (keys['w']||keys['s']||keys['a']||keys['d']||keys['arrowup']||keys['arrowdown']||keys['arrowleft']||keys['arrowright'])) {
+        currentSpeed = player.speed * 1.8;
+        makingNoise = true;
+    }
 
-    // Boundaries
+    // Handle Noise Mechanics
+    if (makingNoise) {
+        player.noise = Math.min(80, player.noise + 4);
+    } else {
+        player.noise = Math.max(0, player.noise - 2);
+    }
+
+    // X-Axis Movement & Collision
+    let nextX = player.x;
+    if (keys['a'] || keys['arrowleft']) nextX -= currentSpeed;
+    if (keys['d'] || keys['arrowright']) nextX += currentSpeed;
+    if (!checkWallCollision(nextX, player.y, player.size)) player.x = nextX;
+
+    // Y-Axis Movement & Collision
+    let nextY = player.y;
+    if (keys['w'] || keys['arrowup']) nextY -= currentSpeed;
+    if (keys['s'] || keys['arrowdown']) nextY += currentSpeed;
+    if (!checkWallCollision(player.x, nextY, player.size)) player.y = nextY;
+
+    // Boundary Locks
     player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
     player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
 
-    // Enemy AI Stalking
-    if (!enemy.active && dist(player.x, player.y, enemy.x, enemy.y) < 250) {
-        enemy.active = true; // Enemy wakes up if you get close
+    // Flashlight Battery Logic
+    const insideElevator = (player.x > elevator.x && player.x < elevator.x + elevator.width && player.y > elevator.y && player.y < elevator.y + elevator.height);
+    if (insideElevator) {
+        player.battery = Math.min(100, player.battery + 1.5); // Quick charge at base
+    } else if (player.lightOn && player.battery > 0) {
+        player.battery -= 0.04; // Slow drain over time
+    }
+    document.getElementById("batFill").style.width = player.battery + "%";
+
+    // --- Entity AI behavior loop ---
+    let distanceToPlayer = dist(player.x, player.y, enemy.x, enemy.y);
+    
+    // AI hearing sensory detection
+    if (makingNoise && dist(player.x, player.y, enemy.x, enemy.y) < 400) {
+        enemy.state = 'HUNT';
+        enemy.targetX = player.x;
+        enemy.targetY = player.y;
+    } 
+    // AI sight reaction loop (Enemies get startled/aggroed if you shine a light directly at them)
+    else if (inLightCone(enemy.x, enemy.y) && distanceToPlayer < 250) {
+        enemy.state = 'HUNT';
+        enemy.targetX = player.x;
+        enemy.targetY = player.y;
     }
 
-    if (enemy.active) {
-        const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+    // State Machine execution
+    if (enemy.state === 'HUNT') {
+        document.getElementById("status").innerText = "HOSTILE PURSUIT";
+        document.getElementById("status").style.color = "#ff3300";
+        let angle = Math.atan2(enemy.targetY - enemy.y, enemy.targetX - enemy.x);
+        enemy.x += Math.cos(angle) * (enemy.speed * 1.5);
+        enemy.y += Math.sin(angle) * (enemy.speed * 1.5);
+
+        if (dist(enemy.x, enemy.y, enemy.targetX, enemy.targetY) < 10) {
+            enemy.state = 'WANDER'; // Lost track
+        }
+    } else {
+        document.getElementById("status").innerText = insideElevator ? "SAFE ZONE" : "MINIMAL THREAT";
+        document.getElementById("status").style.color = insideElevator ? "#00ffff" : "#00ff00";
+        
+        // Idle wandering patrol paths
+        enemy.timer--;
+        if (enemy.timer <= 0) {
+            enemy.targetX = 100 + Math.random() * 700;
+            enemy.targetY = 100 + Math.random() * 450;
+            enemy.timer = 120 + Math.random() * 180;
+        }
+        let angle = Math.atan2(enemy.targetY - enemy.y, enemy.targetX - enemy.x);
         enemy.x += Math.cos(angle) * enemy.speed;
         enemy.y += Math.sin(angle) * enemy.speed;
-        document.getElementById("status").innerText = "HAZARD DETECTED";
-        document.getElementById("status").style.color = "#ff3300";
     }
 
-    // Scrap Collection Check
+    // Scrap Collection logic
     scrapList.forEach(scrap => {
         if (!scrap.collected && dist(player.x, player.y, scrap.x, scrap.y) < player.size + scrap.size) {
             scrap.collected = true;
@@ -128,121 +216,42 @@ function update() {
         }
     });
 
-    // Check Extraction Win Condition
-    if (player.scrap >= 3 && dist(player.x, player.y, elevator.x + elevator.size/2, elevator.y + elevator.size/2) < elevator.size/2) {
-        gameWon = true;
-    }
-
-    // Check Death Collision
-    if (dist(player.x, player.y, enemy.x, enemy.y) < player.size + enemy.size) {
-        gameOver = true;
-    }
+    // Win/Loss Assertions
+    if (player.scrap >= 4 && insideElevator) gameWon = true;
+    if (distanceToPlayer < player.size + enemy.size) gameOver = true;
 }
 
 function draw() {
-    // 1. Clear with Pitch Black
-    ctx.fillStyle = "#000000";
+    // 1. Draw Environment Pitch Black
+    ctx.fillStyle = "#020202";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 2. Render Light Mask (Flashlight Effect)
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(player.x, player.y);
-    const baseAngle = Math.atan2(mouseY - player.y, mouseX - player.x);
-    ctx.arc(player.x, player.y, 300, baseAngle - Math.PI/4, baseAngle + Math.PI/4);
-    ctx.lineTo(player.x, player.y);
-    ctx.clip();
-
-    // --- EVERYTHING INSIDE THE LIGHT IS RENDERED HERE ---
-    
-    // Grid layout floor lines
-    ctx.strokeStyle = "#111111";
-    ctx.lineWidth = 1;
-    for(let i=0; i<canvas.width; i+=40) {
-        ctx.strokeRect(i, 0, 40, canvas.height);
-    }
-
-    // Draw Scrap items if they are lit up
-    scrapList.forEach(scrap => {
-        if (!scrap.collected) {
-            ctx.fillStyle = "#00ffff";
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = "#00ffff";
-            ctx.beginPath();
-            ctx.arc(scrap.x, scrap.y, scrap.size, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.shadowBlur = 0;
-        }
-    });
-
-    // Draw Enemy if lit up
-    if (inLightCone(enemy.x, enemy.y)) {
-        ctx.fillStyle = "#ff0033";
+    // 2. Render Flashlight Visual Projection Cone Mask
+    if (player.lightOn && player.battery > 0) {
+        ctx.save();
         ctx.beginPath();
-        ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
-        ctx.fill();
-        // Spooky eye dot
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(enemy.x - 3, enemy.y - 3, 6, 6);
-    }
+        ctx.moveTo(player.x, player.y);
+        const mouseAngle = Math.atan2(mouseY - player.y, mouseX - player.x);
+        
+        // Draw the 70 degree visibility vector cone geometry
+        ctx.arc(player.x, player.y, 280, mouseAngle - Math.PI/5, mouseAngle + Math.PI/5);
+        ctx.lineTo(player.x, player.y);
+        ctx.clip();
 
-    ctx.restore();
-    // --- END OF LIGHT MASK ---
+        // --- Render elements caught inside flashlight sector visibility layer ---
+        ctx.fillStyle = "#0c0d12";
+        ctx.fillRect(0,0,canvas.width,canvas.height);
 
-    // 3. Render Always-Visible Assets (Player & Safe Zone)
-    
-    // Draw Base/Elevator
-    ctx.strokeStyle = "#d4af37";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(elevator.x, elevator.y, elevator.size, elevator.size);
-    ctx.fillStyle = "rgba(212, 175, 55, 0.1)";
-    ctx.fillRect(elevator.x, elevator.y, elevator.size, elevator.size);
+        // Render Interior Walls inside flashlight projection
+        ctx.fillStyle = "#222530";
+        walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
 
-    // Draw Player
-    ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Draw Flashlight line indicator
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-    ctx.beginPath();
-    ctx.moveTo(player.x, player.y);
-    ctx.lineTo(mouseX, mouseY);
-    ctx.stroke();
-
-    // 4. Game States overlays
-    if (gameOver) {
-        ctx.fillStyle = "rgba(0,0,0,0.85)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "#ff3300";
-        ctx.font = "30px Courier New";
-        ctx.fillText("ASSETS LOST TO ENVIRONMENT", canvas.width/2 - 220, canvas.height/2);
-        ctx.font = "15px Courier New";
-        ctx.fillStyle = "#888";
-        ctx.fillText("Refresh the page to redeploy.", canvas.width/2 - 130, canvas.height/2 + 40);
-    }
-
-    if (gameWon) {
-        ctx.fillStyle = "rgba(0,0,0,0.85)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "#00ff00";
-        ctx.font = "30px Courier New";
-        ctx.fillText("QUOTA MET. EXTRACTION SUCCESS", canvas.width/2 - 250, canvas.height/2);
-        ctx.font = "15px Courier New";
-        ctx.fillStyle = "#888";
-        ctx.fillText("Refresh the page to take another contract.", canvas.width/2 - 180, canvas.height/2 + 40);
-    }
-}
-
-// Core Game Sequence Loop
-function loop() {
-    update();
-    draw();
-    requestAnimationFrame(loop);
-}
-
-loop();
-</script>
+        // Draw active hidden scrap objects
+        scrapList.forEach(scrap => {
+            if (!scrap.collected) {
+                ctx.fillStyle = "#00ffff";
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = "#00ffff";
+                ctx.beginPath();
 </body>
 </html>
